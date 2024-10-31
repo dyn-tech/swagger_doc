@@ -1,0 +1,2429 @@
+openapi: 3.0.0
+info: 
+  title: Sandbox
+  version: v.2
+  description: ""
+servers:
+  - url: https://test-iris.dyn.ru/
+tags:
+- name: auth
+  description: "methods related to user authorization"
+- name: calculation
+  description: "methods related to measurement calculations"
+- name: debug_subscribe
+  description: ""
+- name: billing
+  description: "methods related to payment"
+paths:
+  /auth/jwt/create/:
+    post:
+      tags:
+        - auth
+      summary: "Create authorization tokens"
+      description: |
+        Accepts a set of user credentials and returns access and refresh tokens to confirm authentication of those credentials  
+        To authorize using third-party services, you must add the Bearer prefix before the access token in the Authorization header
+      operationId: jwtCreate
+      requestBody:
+        description: |
+          app - application identifier to determine its family  
+          email   
+          password 
+        content: 
+          application/json:
+            schema:
+              $ref: '#/components/schemas/jwtRequest'
+        required: true
+      responses: 
+        '200': 
+          description: |
+            Tokens received  
+            refresh - to get a new access token and update the refresh token  
+            expires_in - token lifetime in seconds  
+            access - to authorize requests 
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jwtResponse'
+        '401':
+          description: "Incorrect app/email/password or account not activated"
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unauthorized'
+  /auth/jwt/refresh/:
+    post:
+      tags:
+        - auth
+      summary: "Update authorization tokens"
+      description: "Update access and refresh token"
+      operationId: jwtRefresh
+      requestBody:
+        description: |
+          refresh - issued in /auth/jwt/create/ 
+        content: 
+          application/json:
+            schema:
+              $ref: '#/components/schemas/refreshRequest'
+        required: true
+      responses: 
+        '200': 
+          description: |
+            Token updated  
+            refresh - to get a new access token and update the refresh token  
+            expires_in - token lifetime in seconds  
+            access - to authorize requests 
+          content: 
+            application/json:
+              schema: 
+                $ref: '#/components/schemas/refreshResponse'
+        '400':
+          description: "Incorrect/expired token"
+          content: 
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/logoutBad'
+                - $ref: '#/components/schemas/refreshUnauth'
+              examples: 
+                invalid:
+                  value:
+                    {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid_refresh_token",
+      "detail": "Token is invalid or expired",
+      "attr": "refresh"
+    }
+  ]
+}
+                blacklisted:
+                  value:
+                    {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid_refresh_token",
+      "detail": "Token is blacklisted",
+      "attr": "refresh"
+    }
+  ]
+}  
+  /auth/users/:
+    post:
+      summary: "Register user"
+      tags: 
+        - auth
+      description: "User registration by email"
+      operationId: authUsers
+      requestBody:
+        description: |
+          app - application identifier to determine its family  
+          username  
+          email   
+          password 
+        content: 
+          application/json:
+            schema:
+              $ref: '#/components/schemas/userRequest'
+        required: true
+      responses: 
+        '201': 
+          description: |
+            User registered  
+            id - unique user number  
+            username  
+            email
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/userResponse'
+        '400':
+          description: "Non-existent app/already in use email/incorrect email/incorrect password"
+          content: 
+            application/json:
+              schema: 
+                oneOf: 
+                - $ref: '#/components/schemas/errorBadRequestApp'
+                - $ref: '#/components/schemas/errorBadRequestEmail'
+                - $ref: '#/components/schemas/errorBadRequestReEmail'
+                - $ref: '#/components/schemas/errorBadRequestPassword'
+              examples:
+                  app:
+                    value:
+                        {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid_app",
+      "detail": "App matching query does not exist.",
+      "attr": "app.app"
+    }
+  ]
+}
+                  email:
+                    value:
+                        {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid",
+      "detail": "Enter a valid email address.",
+      "attr": "email"
+    }
+  ]
+}
+                  reEmail:
+                    value: 
+                        {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "cannot_create_user",
+      "detail": "Unable to create account.",
+      "attr": null
+    }
+  ]
+}
+                  password:
+                    value:
+                        {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid_password",
+      "detail": "['This password is too short. It must contain at least 8 characters.', 'This password is too common.', 'This password is entirely numeric.']",
+      "attr": "non_field_errors"
+    }
+  ]
+}
+  /auth/users/apple-id/:
+    post:
+      tags:
+        - auth
+      summary: "Get authorization tokens via apple service"
+      description: "Get access and refresh tokens via sign in with apple"
+      operationId: appleId
+      requestBody:
+        description: |
+          [identityToken](https://developer.apple.com/documentation/authenticationservices/asauthorizationsinglesignoncredential/identitytoken) - JSON Web Token (JWT) with user information  
+          [authorizationCode](https://developer.apple.com/documentation/authenticationservices/asauthorizationappleidcredential/authorizationcode) - a token that the application uses to communicate with the server  
+          givenName  - name  
+          familyName - surname
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/identityToken'
+        required: true
+      responses: 
+        '200': 
+          description: |
+            refresh - to get a new access token and update the refresh token  
+            expires_in - token lifetime in seconds  
+            access - to authorize requests  
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jwtResponse'
+        '400':
+          description: "Invalid/empty/expired identityToken"
+          content: 
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/identityTokenFail'
+                  - $ref: '#/components/schemas/identityTokenMiss'
+                  - $ref: '#/components/schemas/identityTokenWrong'
+                  - $ref: '#/components/schemas/identityTokenOld'
+              examples:
+                  fail:
+                    value:
+                        {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid_id_token",
+      "detail": "Token validation failed by Key is not valid JSON",
+      "attr": "non_field_errors"
+    }
+  ]
+}
+                  miss:
+                    value:
+                        {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid_id_token",
+      "detail": "Missing id_token parameter",
+      "attr": "non_field_errors"
+    }
+  ]
+}
+                  wrong:
+                    value: 
+                        {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid_id_token",
+      "detail": "Token validation failed by Not enough segments",
+      "attr": "non_field_errors"
+    }
+  ]
+}
+                  old:
+                    value:
+                        {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid_id_token",
+      "detail": "Token validation failed by Signature has expired",
+      "attr": "non_field_errors"
+    }
+  ]
+}
+  /auth/users/logout/:
+    post:
+      tags:
+        - auth
+      summary: "Reset token "
+      description: "Add a refresh token to the blacklist"
+      operationId: Logout
+      security:
+        - bearerAuth: []
+      requestBody:
+        description: "refresh - current user refresh token"
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/refreshRequest'
+        required: true
+      responses: 
+        '204': 
+          description: "User logged out"
+        '400':
+          description: "Invalid/expired refresh token"
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/logoutBad'
+        '401':
+          description: "Not authorized"
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unautho'
+  /auth/users/me/:
+    get:
+      tags:
+        - auth
+      summary: "Get user details"
+      description: ""
+      operationId: usersMe
+      security:
+        - bearerAuth: []
+      responses: 
+        '200': 
+          description: |
+            id - unique user number  
+            is_active - subscription status  
+            time_end - subscription end time  
+            type - subscription type  
+            avatar - link to user avatar or null  
+            username  
+            email
+          content: 
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/usersSub'
+                - $ref: '#/components/schemas/usersUnsub'
+              examples:
+                subscribed:
+                  value:
+                        {
+                        "id": 1,
+                        "username": "user",
+                        "email": "user@example.com",
+                        "subscription": {
+                          "is_active": true,
+                          "time_end": "01.01.2030",
+                          "type": "premium"
+                          },
+                        "avatar": null
+                        }
+                not subscribed:
+                  value:
+                       {
+                        "id": 1,
+                        "username": "user",
+                        "email": "user@example.com",
+                        "subscription": {
+                          "is_active": false
+                          },
+                        "avatar": null
+                        }
+        '401':
+          description: "Not authorized"
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unautho'
+    put:
+      tags:
+        - auth
+      summary: "Change user details"
+      description: ""
+      operationId: usersMePut
+      security:
+        - bearerAuth: []
+      requestBody:
+        description: |
+          avatar - user image or null  
+          Avatar limitations:  
+          max_width = 512 px  
+          max_height = 512 px  
+          max_size = 2 mb  
+          username
+        content: 
+          application/json:
+            schema:
+              $ref: '#/components/schemas/usersRequest'
+        required: true
+      responses: 
+        '200': 
+          description: |
+            id - unique user number  
+            is_active - subscription status  
+            time_end - subscription end time  
+            type - subscription type  
+            avatar - link to user avatar or null  
+            username  
+            email
+          content: 
+            application/json:
+              schema:  
+                oneOf:
+                - $ref: '#/components/schemas/usersSub'
+                - $ref: '#/components/schemas/usersUnsub'
+              examples:
+                subscribed:
+                  value:
+                        {
+                        "id": 1,
+                        "username": "user",
+                        "email": "user@example.com",
+                        "subscription": {
+                          "is_active": true,
+                          "time_end": "01.01.2030",
+                          "type": "premium"
+                          },
+                        "avatar": null
+                        }
+                not subscribed:
+                  value:
+                       {
+                        "id": 1,
+                        "username": "user",
+                        "email": "user@example.com",
+                        "subscription": {
+                          "is_active": false
+                          },
+                        "avatar": null
+                        }
+        '401':
+          description: "Not authorized"
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unautho'
+    delete:
+      tags:
+        - auth
+      summary: "Delete user"
+      description: ""
+      operationId: usersMeDel
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: current_password
+          description: "User password"
+          schema:
+            type: string
+            example: test1234
+      responses: 
+        '204': 
+          description: "User deleted"
+        '400':
+          description: "Field current_password is not filled"
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/usersDelPass' 
+        '401':
+          description: "Not authorized"
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unautho'  
+  /calculation/:
+    post:
+      tags:
+        - calculation
+      summary: "Calculate measurement"
+      description: "Calculation of subscription-available metrics based on an array of RRs"
+      operationId: Calc
+      security:
+        - bearerAuth: []
+      requestBody:
+        description: |
+          filtration: 0 - do not use filtration  
+          filtration: 1 - enable additional filtration  
+          version: 2 - version of the math module that is used with json  
+          age - patient's age  
+          rr - array of all recorded RR intervals  
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/calcRequest'
+        required: true
+      responses: 
+        '200': 
+          description: |
+            AMo - Mode Amplitude  
+            AvgRR - The average duration of RR-intervals  
+            CV - The coefficient of variation  
+            HF - High Frequencies  
+            HFPerc - Percentage of high frequencies from all  
+            HFnu - High Frequencies (in normalized units)  
+            HFVind - Heart Rate Variability Index  
+            IN - Tension Index  
+            IVR - Vegetative Balance Index  
+            LF - Low Frequencies  
+            LFHF - Vagosympathetic Balance Factor  
+            LFPerc - Percentage of low frequencies from all  
+            LFnu - Low Frequencies (in normalized units)  
+            Mo - Mode  
+            NN50 - The number of pairs of consecutive RR-intervals which differ by more than 50 ms  
+            PAPR - Regulation Processes Adequacy Parameter  
+            RMSSD - The standard deviation of the differences of RR-intervals from their arithmetic mean  
+            RRF2 - Number of Excluded R-R Intervals  
+            RRMax - Maximum duration R-R Interval  
+            RRMin - Minimum duration R-R Interval  
+            SDNN - The standard deviation of RR-intervals  
+            TP - Total Power of Spectrum  
+            VLF - Very Low Frequencies  
+            VLFPerc - Percentage of very low frequencies from all  
+            VPR - Vegetative Factor of the Rhythm  
+            VR - Variation Range  
+            a - Adaptation Possibilities Index  
+            age_bio - Biological age  
+            all_rr - Array with all RR  
+            b - Vegetative Regulation Index  
+            c - Neurohumoral Regulation Index  
+            clear_rr - Array with filtered values RR  
+            d - Psycho-emotional State Index  
+            h - Functional State Index  
+            h_norm - Calculation of the FSI norm for the specified age  
+            indexes_rr_filtered_by_f2 - Numbers of excluded R-R interval  
+            matrix - Array of all colors of the matrix  
+            matrix_hi - Elements in the norm  
+            matrix_lo - Elements with violations  
+            matrix_mid - Elements with changes  
+            pNN50 - The percentage of NN50 of the total number of RR-intervals  
+            reliability - Data reliability  
+            result_a, result_b, result_c, result_d, result_h - not used  
+            stroke_a, stroke_b, stroke_c, stroke_d, stroke_h - array of values from Reliability graph      
+          content: 
+            application/json:
+              schema:
+                example:
+                  calc:
+                    value:
+                      [{
+  "state": "success",
+  "calculation": {
+    "AMo": 20.33898305084746,
+    "AvgRR": 864.542372881356,
+    "CV": 7.46640814234973,
+    "HF": 691.4884236011618,
+    "HFPerc": 21.287752399669497,
+    "HFnu": 33.31005953923912,
+    "HRVind": 19,
+    "IN": 42.48617783014593,
+    "IVR": 74.77567298105683,
+    "LF": 1384.426279543068,
+    "LFHF": 2.0020961049979635,
+    "LFPerc": 42.620126163539354,
+    "LFnu": 66.68994046076091,
+    "Mo": 880,
+    "NN50": 68,
+    "PAPR": 23.112480739599384,
+    "RMSSD": 41.953838669716255,
+    "RRF2": -1,
+    "RRMax": 997,
+    "RRMin": 725,
+    "SDNN": 64.55026212287713,
+    "TP": 3248.2923073264305,
+    "VLF": 1172.3776041822011,
+    "VLFPerc": 36.092121436791174,
+    "VPR": 0.3090909090909091,
+    "VR": 272,
+    "a": 81.18305687203791,
+    "age_bio": 39,
+    "all_rr": [
+      895,
+      905,
+      870,
+      865,
+      918,
+      942,
+      928,
+      895,
+      955,
+      977,
+      950,
+      925,
+      890,
+      948,
+      937,
+      935,
+      910,
+      940,
+      988,
+      932,
+      910,
+      955,
+      960,
+      888,
+      925,
+      970,
+      975,
+      880,
+      918,
+      955,
+      975,
+      912,
+      933,
+      947,
+      908,
+      857,
+      920,
+      955,
+      905,
+      900,
+      903,
+      930,
+      902,
+      868,
+      897,
+      920,
+      935,
+      885,
+      890,
+      928,
+      915,
+      927,
+      975,
+      993,
+      907,
+      880,
+      898,
+      942,
+      985,
+      938,
+      967,
+      933,
+      977,
+      943,
+      902,
+      920,
+      880,
+      895,
+      918,
+      937,
+      823,
+      812,
+      845,
+      813,
+      820,
+      882,
+      940,
+      920,
+      815,
+      765,
+      740,
+      780,
+      848,
+      792,
+      818,
+      867,
+      933,
+      942,
+      875,
+      875,
+      910,
+      950,
+      893,
+      912,
+      928,
+      935,
+      960,
+      942,
+      960,
+      955,
+      935,
+      880,
+      900,
+      898,
+      880,
+      877,
+      933,
+      960,
+      975,
+      885,
+      835,
+      862,
+      913,
+      972,
+      950,
+      818,
+      815,
+      842,
+      890,
+      945,
+      860,
+      833,
+      847,
+      788,
+      817,
+      868,
+      860,
+      865,
+      907,
+      978,
+      997,
+      958,
+      902,
+      783,
+      785,
+      777,
+      840,
+      865,
+      900,
+      880,
+      898,
+      932,
+      945,
+      938,
+      907,
+      810,
+      775,
+      775,
+      828,
+      840,
+      857,
+      820,
+      795,
+      805,
+      860,
+      890,
+      918,
+      915,
+      845,
+      792,
+      775,
+      753,
+      790,
+      800,
+      857,
+      903,
+      887,
+      788,
+      747,
+      735,
+      763,
+      757,
+      785,
+      863,
+      897,
+      920,
+      938,
+      917,
+      870,
+      833,
+      752,
+      735,
+      773,
+      825,
+      892,
+      823,
+      802,
+      825,
+      823,
+      837,
+      830,
+      825,
+      818,
+      830,
+      827,
+      835,
+      780,
+      740,
+      735,
+      780,
+      790,
+      835,
+      870,
+      840,
+      850,
+      858,
+      857,
+      878,
+      870,
+      847,
+      848,
+      870,
+      872,
+      865,
+      845,
+      760,
+      758,
+      795,
+      852,
+      935,
+      965,
+      943,
+      842,
+      828,
+      835,
+      807,
+      775,
+      755,
+      760,
+      810,
+      825,
+      883,
+      915,
+      937,
+      825,
+      825,
+      845,
+      838,
+      802,
+      785,
+      793,
+      837,
+      870,
+      860,
+      820,
+      788,
+      812,
+      870,
+      925,
+      913,
+      820,
+      852,
+      875,
+      885,
+      895,
+      793,
+      780,
+      792,
+      835,
+      855,
+      880,
+      870,
+      828,
+      792,
+      820,
+      860,
+      875,
+      788,
+      762,
+      758,
+      800,
+      827,
+      848,
+      862,
+      848,
+      832,
+      775,
+      725,
+      730,
+      802,
+      885,
+      905,
+      905,
+      880,
+      860,
+      840,
+      755,
+      738,
+      742,
+      805,
+      835,
+      810,
+      800,
+      785,
+      748,
+      755,
+      807,
+      930
+    ],
+    "b": 97.79299473524298,
+    "c": 73.0628035959183,
+    "clear_rr": [
+      895,
+      905,
+      870,
+      865,
+      918,
+      942,
+      928,
+      895,
+      955,
+      977,
+      950,
+      925,
+      890,
+      948,
+      937,
+      935,
+      910,
+      940,
+      988,
+      932,
+      910,
+      955,
+      960,
+      888,
+      925,
+      970,
+      975,
+      880,
+      918,
+      955,
+      975,
+      912,
+      933,
+      947,
+      908,
+      857,
+      920,
+      955,
+      905,
+      900,
+      903,
+      930,
+      902,
+      868,
+      897,
+      920,
+      935,
+      885,
+      890,
+      928,
+      915,
+      927,
+      975,
+      993,
+      907,
+      880,
+      898,
+      942,
+      985,
+      938,
+      967,
+      933,
+      977,
+      943,
+      902,
+      920,
+      880,
+      895,
+      918,
+      937,
+      823,
+      812,
+      845,
+      813,
+      820,
+      882,
+      940,
+      920,
+      815,
+      765,
+      740,
+      780,
+      848,
+      792,
+      818,
+      867,
+      933,
+      942,
+      875,
+      875,
+      910,
+      950,
+      893,
+      912,
+      928,
+      935,
+      960,
+      942,
+      960,
+      955,
+      935,
+      880,
+      900,
+      898,
+      880,
+      877,
+      933,
+      960,
+      975,
+      885,
+      835,
+      862,
+      913,
+      972,
+      950,
+      818,
+      815,
+      842,
+      890,
+      945,
+      860,
+      833,
+      847,
+      788,
+      817,
+      868,
+      860,
+      865,
+      907,
+      978,
+      997,
+      958,
+      902,
+      783,
+      785,
+      777,
+      840,
+      865,
+      900,
+      880,
+      898,
+      932,
+      945,
+      938,
+      907,
+      810,
+      775,
+      775,
+      828,
+      840,
+      857,
+      820,
+      795,
+      805,
+      860,
+      890,
+      918,
+      915,
+      845,
+      792,
+      775,
+      753,
+      790,
+      800,
+      857,
+      903,
+      887,
+      788,
+      747,
+      735,
+      763,
+      757,
+      785,
+      863,
+      897,
+      920,
+      938,
+      917,
+      870,
+      833,
+      752,
+      735,
+      773,
+      825,
+      892,
+      823,
+      802,
+      825,
+      823,
+      837,
+      830,
+      825,
+      818,
+      830,
+      827,
+      835,
+      780,
+      740,
+      735,
+      780,
+      790,
+      835,
+      870,
+      840,
+      850,
+      858,
+      857,
+      878,
+      870,
+      847,
+      848,
+      870,
+      872,
+      865,
+      845,
+      760,
+      758,
+      795,
+      852,
+      935,
+      965,
+      943,
+      842,
+      828,
+      835,
+      807,
+      775,
+      755,
+      760,
+      810,
+      825,
+      883,
+      915,
+      937,
+      825,
+      825,
+      845,
+      838,
+      802,
+      785,
+      793,
+      837,
+      870,
+      860,
+      820,
+      788,
+      812,
+      870,
+      925,
+      913,
+      820,
+      852,
+      875,
+      885,
+      895,
+      793,
+      780,
+      792,
+      835,
+      855,
+      880,
+      870,
+      828,
+      792,
+      820,
+      860,
+      875,
+      788,
+      762,
+      758,
+      800,
+      827,
+      848,
+      862,
+      848,
+      832,
+      775,
+      725,
+      730,
+      802,
+      885,
+      905,
+      905,
+      880,
+      860,
+      840,
+      755,
+      738,
+      742,
+      805,
+      835,
+      810,
+      800,
+      785,
+      748,
+      755,
+      807,
+      930
+    ],
+    "d": 75.64666433087264,
+    "h": 81.92137988351796,
+    "h_norm": 27.899999618530273,
+    "indexes_rr_filtered_by_f2": [],
+    "matrix": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      7,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      9,
+      9,
+      9,
+      9,
+      10,
+      10,
+      10,
+      10,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      11,
+      11,
+      10,
+      10,
+      10,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      10,
+      10,
+      10,
+      10,
+      10,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      11,
+      11,
+      11,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12,
+      12
+    ],
+    "matrix_hi": 82.64462809917356,
+    "matrix_lo": 0,
+    "matrix_mid": 17.355371900826448,
+    "pNN50": 22.818791946308725,
+    "reliability": 79.55713014224706,
+    "result_a": 4,
+    "result_b": 4,
+    "result_c": 0,
+    "result_d": 0,
+    "result_h": 4,
+    "stroke_a": [
+      61.085493406093676,
+      62.757588050894334,
+      63.9002331002331,
+      74.65606239129214,
+      83.0230167075593,
+      80.69738819320214,
+      86.35929756517992,
+      81.46774618220115,
+      86.85653788142476,
+      89.3581707572897,
+      89.35467449828684,
+      94.04245720289228,
+      94.50253040259838,
+      94.7140267391797,
+      85.91609027529003,
+      78.81640245875121,
+      75.69745523091423,
+      79.62946673996701,
+      78.58413176384707,
+      85.29500781122485,
+      80.85043927648579,
+      80.82459948320414
+    ],
+    "stroke_b": [
+      52.043546994443645,
+      53.60391716748181,
+      69.0201045303534,
+      87.53121603851307,
+      83.52607752332065,
+      90.03140871719908,
+      94.21544974910007,
+      96.3995336192353,
+      89.09710000237665,
+      94.68552121113065,
+      94.24758915686925,
+      94.9517546501125,
+      93.59851872758976,
+      81.04624625893693,
+      87.25159180408222,
+      89.37199619623152,
+      77.21554556235074,
+      70.60721825525833,
+      71.72178064773833,
+      79.91430288500985,
+      72.15693096657232,
+      83.8780281274478
+    ],
+    "stroke_c": [
+      56.90480131037233,
+      54.03096333717463,
+      57.82642903018621,
+      58.785690752055196,
+      68.19990286907023,
+      69.0228998905787,
+      76.34903053340518,
+      72.82359137367322,
+      81.02193196572455,
+      70.51004079825961,
+      91.97092556911147,
+      92.94063237165084,
+      95.25360830027734,
+      89.72917667951896,
+      84.59745942874343,
+      77.82304082073958,
+      73.13415238991038,
+      69.14197819631782,
+      76.7406102420557,
+      76.65090464395495,
+      72.81739738744993,
+      73.10736520555257
+    ],
+    "stroke_d": [
+      39.56266576029581,
+      37.385307216881266,
+      40.919026870007194,
+      78.07709480212348,
+      80.71187846927492,
+      83.82705966920206,
+      85.29580640116762,
+      58.82091106880475,
+      65.62226536549855,
+      79.03449583123957,
+      79.69584039045561,
+      76.39701239163782,
+      86.19459777297833,
+      80.11582655182654,
+      77.4858172287753,
+      76.33110300517761,
+      64.95044923594605,
+      72.96426059949255,
+      77.8670958447297,
+      77.04844297137448,
+      74.20636096691125,
+      72.72585722661158
+    ],
+    "stroke_h": [
+      52.399126867801364,
+      51.94444394310801,
+      57.91644838269497,
+      74.76251599599597,
+      78.86521889230627,
+      80.8946891175455,
+      85.5548960622132,
+      77.3779455609786,
+      80.64945880375613,
+      83.39705714947988,
+      88.8172574036808,
+      89.58296415407337,
+      92.38731380086095,
+      86.40131905736554,
+      83.81273968422275,
+      80.58563562022498,
+      72.74940060478036,
+      73.08573094775893,
+      76.2284046245927,
+      79.72716457789103,
+      75.00778214935482,
+      77.63396251070402
+    ],
+    "valid": "true",
+    "version": "2.0"
+                        }
+  }]
+        '400':
+          description: "Incorrectly version/age/rr/filtration, RR entered < 10 / < 151"
+          content: 
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/calcBadVers'
+                - $ref: '#/components/schemas/calcBadAge' 
+                - $ref: '#/components/schemas/calcNoRR'
+                - $ref: '#/components/schemas/calcBadRR'
+                - $ref: '#/components/schemas/calcBadFiltr'
+                - $ref: '#/components/schemas/calcLessRR'
+                - $ref: '#/components/schemas/calcMoreRR'
+              examples:
+                version:
+                  value:
+                   {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid_calculation_data",
+      "detail": "incorrect version",
+      "attr": "metrics"
+    }
+  ]
+}
+                age:
+                  value:
+                    {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid_calculation_data",
+      "detail": "age should be an integer",
+      "attr": "metrics"
+    }
+  ]
+}
+                noRR:
+                  value:
+                    {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid_calculation_data",
+      "detail": "rr should be an array",
+      "attr": "metrics"
+    }
+  ]
+}
+                badRR:
+                  value:
+                    {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid_calculation_data",
+      "detail": "rr array should include only integers",
+      "attr": "metrics"
+    }
+  ]
+}
+                filtration:
+                  value:
+                    {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid_calculation_data",
+      "detail": "filtration should be only 0 or 1",
+      "attr": "metrics"
+    }
+  ]
+}
+                RR<10:
+                  value:
+                    {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid_calculation_data",
+      "detail": "math module doesn't work with less than 10 rr",
+      "attr": "metrics"
+    }
+  ]
+}
+                RR<151:
+                  value:
+                    {
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "invalid_calculation_data",
+      "detail": "filtration = 1 works only with more than 150 rr",
+      "attr": "metrics"
+    }
+  ]
+}
+        '401':
+          description: "Not authorized"
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unautho'
+        '403':
+          description: "No active subscription"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Forbidden'
+  /apple_notifications/:
+    post:
+      tags:
+        - billing
+      summary: "Apple recurring subscription status notifications"
+      description: |
+        Receive notifications from Apple when a user's subscription status changes.  
+        Specified in the iOS application settings in [appstoreconnect.apple.com](https://appstoreconnect.apple.com) 
+      operationId: AppleNotif
+      security:
+        - bearerAuth: []
+      requestBody:
+        description: |
+          [signedPayload](https://developer.apple.com/documentation/appstoreservernotifications/signedpayload) - a notification signed by the App Store in accordance with the JSON Web Signature (JWS) specification  
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/appleNotification'
+        required: true
+      responses: 
+        '204': 
+          description: "Notification received"
+        '401':
+          description: "Not authorized"
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unautho'
+  /apple_payment/:
+    post:
+      tags:
+        - billing
+      summary: "Initial payment for recurring subscription via Apple Pay"
+      description: "Receive an encrypted receipt when you first pay for a subscription via Apple Pay"
+      operationId: ApplePay
+      security:
+        - bearerAuth: []
+      requestBody:
+        description: |
+          [receipt](https://developer.apple.com/documentation/appstorereceipts) - a signed Apple receipt received inside the IOS application is required to verify payment details 
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/applePaymentReq'
+      responses:
+        '200':
+          description: | 
+            Successfully paid  
+            is_active - subscription status  
+            time_end - subscription end time  
+            type - subscription type 
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/applePaymentRes'
+        '400':
+          description: "Invalid receipt"
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/applePaymentBad'
+        '401':
+          description: "Not authorized"
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unautho'
+  /debug_subscribe/:
+    get:
+      tags:
+        - debug_subscribe
+      summary: "Get a subscription without paying"
+      description: |
+        is_subscribed:  
+        true - successful subscription  
+        false - subscription not activated
+      operationId: DebugSub
+      security:
+        - bearerAuth: []
+      responses:
+        '200': 
+          description: ""
+          content: 
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/debugSubFirst'
+                - $ref: '#/components/schemas/debugSubSecond'
+              examples:
+                subscribed:
+                  value:
+                        {
+                        "is_subscribed": "true"
+                        }
+                fail subscribe:
+                  value:
+                       {
+                        "is_subscribed": "false"
+                        }
+        '401':
+          description: "Not authorized"
+          content: 
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unautho'
+components:
+  securitySchemes:
+    bearerAuth:            # arbitrary name for the security scheme
+      type: http
+      scheme: bearer
+      description: "A Bearer token is a unique key that is used to authenticate and authorize access to resources"
+
+  schemas:
+    userResponse:
+      type: object
+      properties:
+        username:
+          type: string
+          example: "Harry Johnson"
+        email:
+          type: string
+          example: "username@example.com"
+        id: 
+          type: integer
+          example: 1
+    errorBadRequestApp:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_app"
+              detail: 
+                type: string
+                example: "App matching query does not exist."
+              attr:
+                type: string
+                example: "app.app"
+    errorBadRequestEmail:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid"
+              detail: 
+                type: string
+                example: "Enter a valid email address."
+              attr:
+                type: string
+                example: "email"
+    errorBadRequestReEmail:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "cannot_create_user"
+              detail: 
+                type: string
+                example: "Unable to create account."
+              attr:
+                type: string
+                example: null
+    errorBadRequestPassword:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_password"
+              detail: 
+                type: string
+                example: "['This password is too short. It must contain at least 8 characters.', 'This password is too common.', 'This password is entirely numeric.']"
+              attr:
+                type: string
+                example: "non_field_errors"
+    userRequest:
+      type: object
+      properties:
+        username: 
+          type: string
+          example: "Harry Johnson"
+        app:
+          type: string
+          example: "GetPulse"
+        email:
+          type: string
+          example: "username@example.com"
+        password:
+          type: string
+          example: "test1234"
+    jwtRequest:
+      type: object
+      properties:
+        app:
+          type: string
+          example: "GetPulse"
+        email:
+          type: string
+          example: ""
+        password:
+          type: string
+          example: "" 
+    jwtResponse:
+      type: object
+      properties:
+        refresh:
+          type: string
+          example: "string"
+        expires_in: 
+          type: integer
+          example: 2592000
+        access: 
+          type: string
+          example: "string"
+    unauthorized:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "client_error"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "no_active_account"
+              detail: 
+                type: string
+                example: "No active account found with the given credentials"
+              attr:
+                type: string
+                example: null
+    refreshRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          example: "string"
+    refreshResponse:
+      type: object
+      properties:
+        access:
+          type: string
+          example: "string"
+        refresh:
+          type: string
+          example: "string"
+        expires_in:
+          type: integer
+          example: 2592000
+    refreshUnauth:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_refresh_token"
+              detail: 
+                type: string
+                example: "Token is blacklisted"
+              attr:
+                type: string
+                example: "refresh"
+    identityToken:
+      type: object
+      properties:
+        identityToken: 
+          type: string
+          example: "string"
+        givenName: 
+          type: string
+          example: "Bob"
+        familyName:
+          type: string
+          example: "Bobson"
+        authorizationCode:
+          type: string
+          example: "string"
+    identityTokenFail:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_id_token"
+              detail: 
+                type: string
+                example: "Token validation failed by Key is not valid JSON"
+              attr:
+                type: string
+                example: "non_field_errors"
+    identityTokenMiss:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_id_token"
+              detail: 
+                type: string
+                example: "Missing id_token parameter"
+              attr:
+                type: string
+                example: "non_field_errors"
+    identityTokenWrong:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_id_token"
+              detail: 
+                type: string
+                example: "Token validation failed by Not enough segments"
+              attr:
+                type: string
+                example: "non_field_errors"
+    identityTokenOld:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_id_token"
+              detail: 
+                type: string
+                example: "Token validation failed by Signature has expired"
+              attr:
+                type: string
+                example: "non_field_errors"
+    logoutBad:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_refresh_token"
+              detail: 
+                type: string
+                example: "Token is invalid or expired"
+              attr:
+                type: string
+                example: "refresh"
+    unautho:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "client_error"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "not_authenticated"
+              detail: 
+                type: string
+                example: "Authentication credentials were not provided."
+              attr:
+                type: string
+                example: null
+    usersSub:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        username: 
+          type: string
+          example: "user"
+        email:
+          type: string
+          example: "user@example.com"
+        subscription:
+          type: object
+          properties:
+            is_acive: 
+              type: boolean
+              example: true
+            time_end:
+              type: string
+              example: "01.01.2030"
+            type: 
+              type: string
+              example: "premium"
+        avatar:
+          type: string
+          example: "null"
+    usersUnsub:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        username: 
+          type: string
+          example: "user"
+        email:
+          type: string
+          example: "user@example.com"
+        subscription:
+            type: object
+            properties:
+              is_acive: 
+                type: boolean
+                example: false
+        avatar:
+          type: string
+          example: "null"
+    usersRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          example: "user"
+        avatar: 
+          type: string
+          example: null
+    usersDelPass:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "required"
+              detail: 
+                type: string
+                example: "This field is required."
+              attr:
+                type: string
+                example: "current_password"
+    calcRequest:
+      type: object
+      properties:
+        metrics: 
+            type: object
+            properties: 
+              version:
+                type: integer
+                example: 2
+              filtration:
+                type: integer
+                example: 0
+              age:
+                type: integer
+                example: 64
+              rr: 
+                type: object
+                example: [895, 905, 870, 865, 918, 942, 928, 895, 955, 977, 950, 925, 890, 948, 937, 935, 910, 940, 988, 932, 910, 955, 960, 888, 925, 970, 975, 880, 918, 955, 975, 912, 933, 947, 908, 857, 920, 955, 905, 900, 903, 930, 902, 868, 897, 920, 935, 885, 890, 928, 915, 927, 975, 993, 907, 880, 898, 942, 985, 938, 967, 933, 977, 943, 902, 920, 880, 895, 918, 937, 823, 812, 845, 813, 820, 882, 940, 920, 815, 765, 740, 780, 848, 792, 818, 867, 933, 942, 875, 875, 910, 950, 893, 912, 928, 935, 960, 942, 960, 955, 935, 880, 900, 898, 880, 877, 933, 960, 975, 885, 835, 862, 913, 972, 950, 818, 815, 842, 890, 945, 860, 833, 847, 788, 817, 868, 860, 865, 907, 978, 997, 958, 902, 783, 785, 777, 840, 865, 900, 880, 898, 932, 945, 938, 907, 810, 775, 775, 828, 840, 857, 820, 795, 805, 860, 890, 918, 915, 845, 792, 775, 753, 790, 800, 857, 903, 887, 788, 747, 735, 763, 757, 785, 863, 897, 920, 938, 917, 870, 833, 752, 735, 773, 825, 892, 823, 802, 825, 823, 837, 830, 825, 818, 830, 827, 835, 780, 740, 735, 780, 790, 835, 870, 840, 850, 858, 857, 878, 870, 847, 848, 870, 872, 865, 845, 760, 758, 795, 852, 935, 965, 943, 842, 828, 835, 807, 775, 755, 760, 810, 825, 883, 915, 937, 825, 825, 845, 838, 802, 785, 793, 837, 870, 860, 820, 788, 812, 870, 925, 913, 820, 852, 875, 885, 895, 793, 780, 792, 835, 855, 880, 870, 828, 792, 820, 860, 875, 788, 762, 758, 800, 827, 848, 862, 848, 832, 775, 725, 730, 802, 885, 905, 905, 880, 860, 840, 755, 738, 742, 805, 835, 810, 800, 785, 748, 755, 807, 930]
+    calcBadVers:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+          description: "Incorrect version"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_calculation_data"
+              detail: 
+                type: string
+                example: "incorrect version"
+              attr:
+                type: string
+                example: "metrics"
+    calcBadAge:
+     type: object
+     properties:
+        type:
+          type: string
+          example: "validation_error"
+          description: "Incorrect age"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_calculation_data"
+              detail: 
+                type: string
+                example: "age should be an integer"
+              attr:
+                type: string
+                example: "metrics"
+    calcNoRR:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+          description: "Incorrect rr"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_calculation_data"
+              detail: 
+                type: string
+                example: "rr should be an array"
+              attr:
+                type: string
+                example: "metrics"
+    calcBadRR:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+          description: "Incorrectly fill the array in the rr"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_calculation_data"
+              detail: 
+                type: string
+                example: "rr array should include only integers"
+              attr:
+                type: string
+                example: "metrics"
+    calcBadFiltr:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+          description: "Incorrect filtration"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_calculation_data"
+              detail: 
+                type: string
+                example: "filtration should be only 0 or 1"
+              attr:
+                type: string
+                example: "metrics"
+    calcLessRR:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+          description: "Enter < 10 rr"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_calculation_data"
+              detail: 
+                type: string
+                example: "math module doesn't work with less than 10 rr"
+              attr:
+                type: string
+                example: "metrics"
+    calcMoreRR:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+          description: "Execute request with filtration 1 when rr < 151"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_calculation_data"
+              detail: 
+                type: string
+                example: "filtration = 1 works only with more than 150 rr"
+              attr:
+                type: string
+                example: "metrics"
+    Forbidden:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "client_error"
+        error:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "permission_denied"
+              detail: 
+                type: string
+                example: "You do not have permission to perform this action."
+              attr:
+                type: string
+                example: null
+    appleNotification:
+      type: object
+      properties:
+        signedPayload:
+          type: string
+          example: "string"
+    applePaymentReq:
+      type: object
+      properties:
+        receipt:
+          type: string
+          example: "string"
+    applePaymentRes:
+      type: object
+      properties:
+        subscription:
+            type: object
+            properties:
+              is_active:
+                type: boolean
+                example: true
+              time_end: 
+                type: string
+                example: "2026.01.12 11:28"
+              type:
+                type: string
+                example: "premium"
+    applePaymentBad:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "validation_error"
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: "invalid_product_id"
+              detail: 
+                type: string
+                example: "invalid product_id"
+              attr:
+                type: string
+                example: "non_field_errors"
+    debugSubFirst:
+      type: object
+      properties:
+        is_subscribed:
+          type: string
+          example: "true"
+    debugSubSecond:
+      type: object
+      properties:
+        is_subscribed:
+          type: string
+          example: "false"
